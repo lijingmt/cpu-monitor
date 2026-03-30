@@ -1,0 +1,31 @@
+# Rust
+server/target/
+server/Cargo.lock
+**/*.rs.bk
+*.pdb
+
+# Data
+server/data/
+data/
+*.csv
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Logs
+*.log
+record.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

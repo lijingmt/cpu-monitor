@@ -1,0 +1,15 @@
+services:
+  cpu-monitor:
+    build: .
+    container_name: cpu-monitor
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+    # privileged needed for some systems to access sensors
+    privileged: true
+    devices:
+      - /dev/cpu:/dev/cpu
+    environment:
+      - COLLECT_INTERVAL=3600  # 每小时收集一次

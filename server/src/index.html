@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CPU Monitor</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, sans-serif; background: #1a1a2e; color: #eee; min-height: 100vh; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        h1 { text-align: center; margin-bottom: 20px; font-weight: 300; }
+        .current { display: flex; justify-content: center; gap: 40px; margin-bottom: 20px; flex-wrap: wrap; }
+        .card { background: #16213e; padding: 20px 40px; border-radius: 12px; text-align: center; }
+        .card .value { font-size: 2.5em; font-weight: bold; }
+        .card .label { font-size: 0.9em; color: #888; margin-top: 5px; }
+        .temp { color: #e74c3c; }
+        .freq { color: #3498db; }
+        .chart-container { background: #16213e; padding: 20px; border-radius: 12px; height: 400px; }
+        .status { text-align: center; font-size: 0.8em; color: #666; margin-top: 10px; }
+        .last-update { text-align: center; color: #888; margin-bottom: 15px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>CPU Monitor</h1>
+        <div class="current">
+            <div class="card">
+                <div class="value temp" id="currentTemp">--°C</div>
+                <div class="label">Temperature</div>
+            </div>
+            <div class="card">
+                <div class="value freq" id="currentFreq">-- MHz</div>
+                <div class="label">Frequency</div>
+            </div>
+        </div>
+        <div class="last-update" id="lastUpdate">Loading...</div>
+        <div class="chart-container">
+            <canvas id="chart"></canvas>
+        </div>
+        <div class="status">Auto-refresh every 30s | Showing last 200 records</div>
+    </div>
+
+    <script>
+        const ctx = document.getElementById('chart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    {
+                        label: 'Temperature (°C)',
+                        data: [],
+                        borderColor: '#e74c3c',
+                        backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                        yAxisID: 'y',
+                        fill: true,
+                        tension: 0.3
+                    },
+                    {
+                        label: 'Frequency (MHz)',
+                        data: [],
+                        borderColor: '#3498db',
+                        backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                        yAxisID: 'y1',
+                        fill: true,
+                        tension: 0.3
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: { legend: { labels: { color: '#ccc' } } },
+                scales: {
+                    x: { ticks: { color: '#888' }, grid: { color: '#333' } },
+                    y: { 
+                        type: 'linear', 
+                        position: 'left',
+                        ticks: { color: '#e74c3c' },
+                        grid: { color: '#333' },
+                        title: { display: true, text: 'Temperature (°C)', color: '#e74c3c' }
+                    },
+                    y1: { 
+                        type: 'linear', 
+                        position: 'right',
+                        ticks: { color: '#3498db' },
+                        grid: { display: false },
+                        title: { display: true, text: 'Frequency (MHz)', color: '#3498db' }
+                    }
+                }
+            }
+        });
+
+        async function fetchData() {
+            try {
+                const res = await fetch('/api/stats');
+                const data = await res.json();
+                
+                const labels = data.map(d => d.timestamp.split(' ')[1] || d.timestamp);
+                const temps = data.map(d => d.temp);
+                const freqs = data.map(d => d.freq);
+
+                chart.data.labels = labels;
+                chart.data.datasets[0].data = temps;
+                chart.data.datasets[1].data = freqs;
+                chart.update('none');
+
+                if (data.length > 0) {
+                    const last = data[data.length - 1];
+                    document.getElementById('currentTemp').textContent = last.temp.toFixed(1) + '°C';
+                    document.getElementById('currentFreq').textContent = last.freq + ' MHz';
+                    document.getElementById('lastUpdate').textContent = 'Last update: ' + last.timestamp;
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        fetchData();
+        setInterval(fetchData, 30000);
+    </script>
+</body>
+</html>
