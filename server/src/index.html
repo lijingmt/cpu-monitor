@@ -19,6 +19,21 @@
         .chart-container { background: #16213e; padding: 20px; border-radius: 12px; height: 400px; }
         .status { text-align: center; font-size: 0.8em; color: #666; margin-top: 10px; }
         .last-update { text-align: center; color: #888; margin-bottom: 15px; }
+        .controls { text-align: center; margin-bottom: 15px; }
+        .days-select {
+            background: #16213e;
+            color: #eee;
+            border: 1px solid #333;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            outline: none;
+        }
+        .days-select:hover {
+            border-color: #555;
+        }
+        .loading { color: #888; font-size: 0.9em; }
     </style>
 </head>
 <body>
@@ -35,14 +50,28 @@
             </div>
         </div>
         <div class="last-update" id="lastUpdate">Loading...</div>
+        <div class="controls">
+            <select id="daysSelect" class="days-select">
+                <option value="1">Last 1 Day</option>
+                <option value="2">Last 2 Days</option>
+                <option value="3">Last 3 Days</option>
+                <option value="7">Last 7 Days</option>
+                <option value="15">Last 15 Days</option>
+                <option value="30">Last 30 Days</option>
+            </select>
+            <span class="loading" id="loading"></span>
+        </div>
         <div class="chart-container">
             <canvas id="chart"></canvas>
         </div>
-        <div class="status">Auto-refresh every 30s | Showing last 200 records</div>
+        <div class="status">Auto-refresh every 30s</div>
     </div>
 
     <script>
         const ctx = document.getElementById('chart').getContext('2d');
+        const daysSelect = document.getElementById('daysSelect');
+        let currentDays = 1;
+
         const chart = new Chart(ctx, {
             type: 'line',
             data: {
@@ -55,7 +84,9 @@
                         backgroundColor: 'rgba(231, 76, 60, 0.1)',
                         yAxisID: 'y',
                         fill: true,
-                        tension: 0.3
+                        tension: 0.3,
+                        pointRadius: 0,
+                        pointHoverRadius: 4
                     },
                     {
                         label: 'Frequency (MHz)',
@@ -64,7 +95,9 @@
                         backgroundColor: 'rgba(52, 152, 219, 0.1)',
                         yAxisID: 'y1',
                         fill: true,
-                        tension: 0.3
+                        tension: 0.3,
+                        pointRadius: 0,
+                        pointHoverRadius: 4
                     }
                 ]
             },
@@ -72,18 +105,27 @@
                 responsive: true,
                 maintainAspectRatio: false,
                 interaction: { mode: 'index', intersect: false },
-                plugins: { legend: { labels: { color: '#ccc' } } },
+                plugins: {
+                    legend: { labels: { color: '#ccc' } },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                    }
+                },
                 scales: {
-                    x: { ticks: { color: '#888' }, grid: { color: '#333' } },
-                    y: { 
-                        type: 'linear', 
+                    x: {
+                        ticks: { color: '#888', maxTicksLimit: 12 },
+                        grid: { color: '#333' }
+                    },
+                    y: {
+                        type: 'linear',
                         position: 'left',
                         ticks: { color: '#e74c3c' },
                         grid: { color: '#333' },
                         title: { display: true, text: 'Temperature (°C)', color: '#e74c3c' }
                     },
-                    y1: { 
-                        type: 'linear', 
+                    y1: {
+                        type: 'linear',
                         position: 'right',
                         ticks: { color: '#3498db' },
                         grid: { display: false },
@@ -95,10 +137,25 @@
 
         async function fetchData() {
             try {
-                const res = await fetch('/api/stats');
+                const loading = document.getElementById('loading');
+                loading.textContent = ' Loading...';
+
+                const res = await fetch(`/api/stats?days=${currentDays}`);
                 const data = await res.json();
-                
-                const labels = data.map(d => d.timestamp.split(' ')[1] || d.timestamp);
+
+                const labels = data.map(d => {
+                    const parts = d.timestamp.split(' ');
+                    if (parts.length >= 2) {
+                        const date = parts[0].substring(5); // MM-DD
+                        const time = parts[1].substring(0, 5); // HH:MM
+                        // 根据数据量决定显示格式
+                        if (data.length > 500) {
+                            return date; // 只显示日期
+                        }
+                        return `${date} ${time}`;
+                    }
+                    return d.timestamp;
+                });
                 const temps = data.map(d => d.temp);
                 const freqs = data.map(d => d.freq);
 
@@ -111,14 +168,28 @@
                     const last = data[data.length - 1];
                     document.getElementById('currentTemp').textContent = last.temp.toFixed(1) + '°C';
                     document.getElementById('currentFreq').textContent = last.freq + ' MHz';
-                    document.getElementById('lastUpdate').textContent = 'Last update: ' + last.timestamp;
+                    document.getElementById('lastUpdate').textContent = `Last update: ${last.timestamp} | ${data.length} records`;
+                } else {
+                    document.getElementById('lastUpdate').textContent = 'No data available';
                 }
+
+                loading.textContent = '';
             } catch (e) {
                 console.error(e);
+                document.getElementById('loading').textContent = ' Error loading data';
             }
         }
 
+        // 下拉框变化时重新获取数据
+        daysSelect.addEventListener('change', (e) => {
+            currentDays = parseInt(e.target.value);
+            fetchData();
+        });
+
+        // 初始加载
         fetchData();
+
+        // 定时刷新（保持当前选择的天数）
         setInterval(fetchData, 30000);
     </script>
 </body>

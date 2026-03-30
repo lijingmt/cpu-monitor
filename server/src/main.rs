@@ -1,10 +1,11 @@
 use axum::{
+    extract::{Query, State},
     response::{Html, IntoResponse, Json},
     routing::get,
     Router,
 };
-use serde::Serialize;
-use std::fs;
+use serde::{Deserialize, Serialize};
+use std::{collections::HashMap, fs};
 
 #[derive(Debug, Clone, Serialize)]
 struct CpuStats {
@@ -13,12 +14,27 @@ struct CpuStats {
     freq: u32,
 }
 
+#[derive(Deserialize)]
+struct StatsQuery {
+    days: Option<String>,
+}
+
+#[derive(Clone)]
+struct AppState {
+    cache: HashMap<String, Vec<CpuStats>>,
+}
+
 #[tokio::main]
 async fn main() {
+    let state = AppState {
+        cache: HashMap::new(),
+    };
+
     let app = Router::new()
         .route("/", get(index))
         .route("/api/stats", get(get_stats))
-        .route("/api/current", get(get_current));
+        .route("/api/current", get(get_current))
+        .with_state(state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     println!("CPU Monitor running on http://0.0.0.0:3000");
@@ -29,9 +45,11 @@ async fn index() -> Html<&'static str> {
     Html(include_str!("index.html"))
 }
 
-async fn get_stats() -> impl IntoResponse {
-    let stats = load_data("/data");
-    let stats: Vec<_> = stats.into_iter().rev().take(200).rev().collect();
+async fn get_stats(Query(params): Query<StatsQuery>, State(state): State<AppState>) -> impl IntoResponse {
+    let days_key = params.days.clone().unwrap_or_else(|| "1".to_string());
+    let days: u64 = days_key.parse().unwrap_or(1);
+
+    let stats = filter_by_days(load_data("/data"), days);
     Json(stats)
 }
 
@@ -66,6 +84,61 @@ fn load_data(dir: &str) -> Vec<CpuStats> {
     }
     all_stats.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
     all_stats
+}
+
+fn filter_by_days(mut stats: Vec<CpuStats>, days: u64) -> Vec<CpuStats> {
+    if stats.is_empty() {
+        return stats;
+    }
+
+    // 获取最新数据的时间戳
+    if let Some(last) = stats.last() {
+        if let Ok(last_time) = parse_timestamp(&last.timestamp) {
+            let cutoff = last_time - (days * 24 * 3600);
+            stats.retain(|s| {
+                if let Ok(t) = parse_timestamp(&s.timestamp) {
+                    t >= cutoff
+                } else {
+                    false
+                }
+            });
+        }
+    }
+
+    // 限制最多返回5000条
+    if stats.len() > 5000 {
+        let start = stats.len() - 5000;
+        stats = stats.into_iter().skip(start).collect();
+    }
+
+    stats
+}
+
+fn parse_timestamp(ts: &str) -> Result<u64, String> {
+    // 解析格式: "2026-03-30 07:05:35"
+    let parts: Vec<&str> = ts.split(' ').collect();
+    if parts.len() < 2 {
+        return Err("Invalid format".to_string());
+    }
+
+    let date_parts: Vec<u32> = parts[0]
+        .split('-')
+        .map(|s| s.parse().unwrap_or(0))
+        .collect();
+    let time_parts: Vec<u32> = parts[1]
+        .split(':')
+        .map(|s| s.parse().unwrap_or(0))
+        .collect();
+
+    if date_parts.len() != 3 || time_parts.len() != 3 {
+        return Err("Invalid format".to_string());
+    }
+
+    // 简化为秒数（不考虑闰年等，仅用于比较）
+    let days_since_epoch = date_parts[0] * 365 + date_parts[1] * 30 + date_parts[2];
+    let seconds = days_since_epoch * 86400 + time_parts[0] * 3600 + time_parts[1] * 60 + time_parts[2];
+
+    Ok(seconds as u64)
 }
 
 fn parse_line(line: &str) -> Option<CpuStats> {
